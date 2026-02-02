@@ -2,10 +2,10 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 import psycopg2
-import numpy as np  # (pas utilisé ici, mais je le laisse comme dans ton code)
+import numpy as np
 
 st.set_page_config(page_title="Carte e-commerce", layout="wide")
-st.title("📍 Boutiques & commandes e-commerce — Année 2025")
+st.title("📍 Boutiques & commandes e-commerce")
 
 # =========================
 # DB CONNECT
@@ -33,34 +33,50 @@ df_magasin_ecom = pd.read_sql("""
     FROM public.ref_magasin_ecommerce
 """, conn)
 
-# ⚠️ Commandes filtrées sur 2025 (4 premiers caractères du code_commande)
 df_cmd_all = pd.read_sql("""
-    SELECT code_commande, total_commande, code_magasin, latitude, longitude
+    SELECT
+      code_commande,
+      total_commande,
+      code_magasin,
+      latitude,
+      longitude,
+      LEFT(code_commande, 4) AS annee
     FROM public.commande_ecommerce
     WHERE latitude IS NOT NULL
       AND longitude IS NOT NULL
-      AND LEFT(code_commande, 4) = '2025'
 """, conn)
 
 # =========================
-# FILTRE CODE_MAGASIN (COMMANDES) - défaut: magBouq
+# FILTRES UI
 # =========================
-codes_magasin = sorted(df_cmd_all["code_magasin"].dropna().unique().tolist())
+st.subheader("🎛️ Filtres")
 
-if not codes_magasin:
-    st.warning("Aucune commande 2025 trouvée (LEFT(code_commande,4)='2025').")
-    conn.close()
-    st.stop()
+# Années disponibles
+annees = sorted(df_cmd_all["annee"].dropna().unique().tolist())
+annee_defaut = annees[-1] if annees else None
+
+selected_annee = st.selectbox(
+    "📅 Année",
+    annees,
+    index=annees.index(annee_defaut) if annee_defaut in annees else 0
+)
+
+# Filtre année
+df_cmd_annee = df_cmd_all[df_cmd_all["annee"] == selected_annee]
+
+# Codes magasin disponibles pour l’année
+codes_magasin = sorted(df_cmd_annee["code_magasin"].dropna().unique().tolist())
 
 default_index = codes_magasin.index("magBouq") if "magBouq" in codes_magasin else 0
 
 selected_code_magasin = st.selectbox(
-    "🏬 Filtrer les commandes (2025) par code magasin",
+    "🏬 Code magasin",
     codes_magasin,
     index=default_index
 )
 
-df_cmd = df_cmd_all[df_cmd_all["code_magasin"] == selected_code_magasin].copy()
+# Filtre final commandes
+df_cmd = df_cmd_annee[df_cmd_annee["code_magasin"] == selected_code_magasin].copy()
 
 # =========================
 # PREP
@@ -81,6 +97,7 @@ df_magasin["hover"] = df_magasin.apply(
 
 df_cmd["hover"] = df_cmd.apply(
     lambda r: f"Commande: {r['code_commande']}<br>"
+              f"Année: {r['annee']}<br>"
               f"Code magasin: {r['code_magasin']}<br>"
               f"Total: {r['total_commande']}",
     axis=1,
@@ -100,10 +117,10 @@ center_lon = float(all_lon.mean()) if len(all_lon) else 2.2
 # =========================
 fig = go.Figure()
 
-# COMMANDES (dessous, filtrées, 2025)
+# COMMANDES (dessous)
 if not df_cmd.empty:
     fig.add_trace(go.Scattermapbox(
-        name=f"Commandes 2025 ({selected_code_magasin})",
+        name=f"Commandes {selected_annee} ({selected_code_magasin})",
         lat=df_cmd["latitude"],
         lon=df_cmd["longitude"],
         mode="markers",
@@ -112,7 +129,7 @@ if not df_cmd.empty:
         hoverinfo="text",
     ))
 else:
-    st.info(f"Aucune commande 2025 pour le code magasin : {selected_code_magasin}")
+    st.info(f"Aucune commande pour {selected_code_magasin} en {selected_annee}")
 
 # MAGASINS (dessus)
 MAG_SIZE = 12
@@ -136,11 +153,7 @@ if not df_mag_green.empty:
         lat=df_mag_green["latitude"],
         lon=df_mag_green["longitude"],
         mode="markers",
-        marker=go.scattermapbox.Marker(
-            size=MAG_SIZE,
-            color="yellow",   # ⬅️ CHANGEMENT ICI
-            opacity=0.95
-        ),
+        marker=go.scattermapbox.Marker(size=MAG_SIZE, color="green", opacity=0.95),
         text=df_mag_green["hover"],
         hoverinfo="text",
     ))
