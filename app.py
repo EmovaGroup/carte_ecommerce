@@ -8,6 +8,14 @@ st.set_page_config(page_title="Carte e-commerce", layout="wide")
 st.title("📍 Boutiques & commandes e-commerce")
 
 # =========================
+# SESSION STATE (appliquer filtres)
+# =========================
+if "applied_annee" not in st.session_state:
+    st.session_state.applied_annee = None
+if "applied_code_magasin" not in st.session_state:
+    st.session_state.applied_code_magasin = "magBouq"
+
+# =========================
 # DB CONNECT
 # =========================
 conn = psycopg2.connect(
@@ -47,36 +55,70 @@ df_cmd_all = pd.read_sql("""
 """, conn)
 
 # =========================
-# FILTRES UI
+# FILTRES UI + BOUTON APPLIQUER
 # =========================
 st.subheader("🎛️ Filtres")
 
-# Années disponibles
 annees = sorted(df_cmd_all["annee"].dropna().unique().tolist())
-annee_defaut = annees[-1] if annees else None
+if not annees:
+    st.error("Aucune année détectée (LEFT(code_commande, 4)).")
+    conn.close()
+    st.stop()
 
-selected_annee = st.selectbox(
+# Année par défaut = 2025 si dispo, sinon dernière année
+annee_defaut = "2025" if "2025" in annees else annees[-1]
+
+# Si première fois, on initialise avec défaut
+if st.session_state.applied_annee is None:
+    st.session_state.applied_annee = annee_defaut
+
+
+# Filtre "en attente" (pas appliqué tant que bouton pas cliqué)
+pending_annee = st.selectbox(
     "📅 Année",
     annees,
-    index=annees.index(annee_defaut) if annee_defaut in annees else 0
+    index=annees.index(st.session_state.applied_annee) if st.session_state.applied_annee in annees else 0,
+    key="pending_annee"
 )
 
-# Filtre année
-df_cmd_annee = df_cmd_all[df_cmd_all["annee"] == selected_annee]
+# Codes magasin dispo selon l'année "pending"
+df_cmd_pending = df_cmd_all[df_cmd_all["annee"] == pending_annee]
+codes_magasin = sorted(df_cmd_pending["code_magasin"].dropna().unique().tolist())
 
-# Codes magasin disponibles pour l’année
-codes_magasin = sorted(df_cmd_annee["code_magasin"].dropna().unique().tolist())
+if not codes_magasin:
+    st.warning(f"Aucun code magasin disponible pour l'année {pending_annee}.")
+    conn.close()
+    st.stop()
 
-default_index = codes_magasin.index("magBouq") if "magBouq" in codes_magasin else 0
+default_index = codes_magasin.index(st.session_state.applied_code_magasin) if st.session_state.applied_code_magasin in codes_magasin else (
+    codes_magasin.index("magBouq") if "magBouq" in codes_magasin else 0
+)
 
-selected_code_magasin = st.selectbox(
+pending_code_magasin = st.selectbox(
     "🏬 Code magasin",
     codes_magasin,
-    index=default_index
+    index=default_index,
+    key="pending_code_magasin"
 )
 
-# Filtre final commandes
-df_cmd = df_cmd_annee[df_cmd_annee["code_magasin"] == selected_code_magasin].copy()
+# Bouton Appliquer
+apply_clicked = st.button("✅ Appliquer les filtres")
+
+if apply_clicked:
+    st.session_state.applied_annee = pending_annee
+    st.session_state.applied_code_magasin = pending_code_magasin
+
+# Filtres effectivement appliqués
+selected_annee = st.session_state.applied_annee
+selected_code_magasin = st.session_state.applied_code_magasin
+
+# =========================
+# FILTRE FINAL COMMANDES (APPLIQUÉ)
+# =========================
+df_cmd = df_cmd_all[
+    (df_cmd_all["annee"] == selected_annee) &
+    (df_cmd_all["code_magasin"] == selected_code_magasin)
+].copy()
 
 # =========================
 # PREP
@@ -134,7 +176,7 @@ else:
 # MAGASINS (dessus)
 MAG_SIZE = 12
 df_mag_blue = df_magasin[df_magasin["categorie"] == "Magasin"]
-df_mag_green = df_magasin[df_magasin["categorie"] == "Magasin e-commerce"]
+df_mag_yellow = df_magasin[df_magasin["categorie"] == "Magasin e-commerce"]
 
 if not df_mag_blue.empty:
     fig.add_trace(go.Scattermapbox(
@@ -147,14 +189,14 @@ if not df_mag_blue.empty:
         hoverinfo="text",
     ))
 
-if not df_mag_green.empty:
+if not df_mag_yellow.empty:
     fig.add_trace(go.Scattermapbox(
         name="Magasins e-commerce",
-        lat=df_mag_green["latitude"],
-        lon=df_mag_green["longitude"],
+        lat=df_mag_yellow["latitude"],
+        lon=df_mag_yellow["longitude"],
         mode="markers",
-        marker=go.scattermapbox.Marker(size=MAG_SIZE, color="green", opacity=0.95),
-        text=df_mag_green["hover"],
+        marker=go.scattermapbox.Marker(size=MAG_SIZE, color="yellow", opacity=0.95),
+        text=df_mag_yellow["hover"],
         hoverinfo="text",
     ))
 
