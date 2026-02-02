@@ -2,10 +2,10 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 import psycopg2
-import numpy as np
+import numpy as np  # (pas utilisé ici, mais je le laisse comme dans ton code)
 
 st.set_page_config(page_title="Carte e-commerce", layout="wide")
-st.title("📍 Boutiques & commandes e-commerce")
+st.title("📍 Boutiques & commandes e-commerce — Année 2025")
 
 # =========================
 # DB CONNECT
@@ -33,26 +33,34 @@ df_magasin_ecom = pd.read_sql("""
     FROM public.ref_magasin_ecommerce
 """, conn)
 
+# ⚠️ Commandes filtrées sur 2025 (4 premiers caractères du code_commande)
 df_cmd_all = pd.read_sql("""
     SELECT code_commande, total_commande, code_magasin, latitude, longitude
     FROM public.commande_ecommerce
-    WHERE latitude IS NOT NULL AND longitude IS NOT NULL
+    WHERE latitude IS NOT NULL
+      AND longitude IS NOT NULL
+      AND LEFT(code_commande, 4) = '2025'
 """, conn)
 
 # =========================
-# FILTRE CODE_MAGASIN (COMMANDES)
+# FILTRE CODE_MAGASIN (COMMANDES) - défaut: magBouq
 # =========================
 codes_magasin = sorted(df_cmd_all["code_magasin"].dropna().unique().tolist())
+
+if not codes_magasin:
+    st.warning("Aucune commande 2025 trouvée (LEFT(code_commande,4)='2025').")
+    conn.close()
+    st.stop()
 
 default_index = codes_magasin.index("magBouq") if "magBouq" in codes_magasin else 0
 
 selected_code_magasin = st.selectbox(
-    "🏬 Filtrer les commandes par code magasin",
+    "🏬 Filtrer les commandes (2025) par code magasin",
     codes_magasin,
     index=default_index
 )
 
-df_cmd = df_cmd_all[df_cmd_all["code_magasin"] == selected_code_magasin]
+df_cmd = df_cmd_all[df_cmd_all["code_magasin"] == selected_code_magasin].copy()
 
 # =========================
 # PREP
@@ -92,10 +100,10 @@ center_lon = float(all_lon.mean()) if len(all_lon) else 2.2
 # =========================
 fig = go.Figure()
 
-# COMMANDES (dessous, filtrées)
+# COMMANDES (dessous, filtrées, 2025)
 if not df_cmd.empty:
     fig.add_trace(go.Scattermapbox(
-        name=f"Commandes ({selected_code_magasin})",
+        name=f"Commandes 2025 ({selected_code_magasin})",
         lat=df_cmd["latitude"],
         lon=df_cmd["longitude"],
         mode="markers",
@@ -103,6 +111,8 @@ if not df_cmd.empty:
         text=df_cmd["hover"],
         hoverinfo="text",
     ))
+else:
+    st.info(f"Aucune commande 2025 pour le code magasin : {selected_code_magasin}")
 
 # MAGASINS (dessus)
 MAG_SIZE = 12
