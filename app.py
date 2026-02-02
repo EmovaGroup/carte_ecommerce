@@ -136,7 +136,11 @@ if not df_mag_green.empty:
         lat=df_mag_green["latitude"],
         lon=df_mag_green["longitude"],
         mode="markers",
-        marker=go.scattermapbox.Marker(size=MAG_SIZE, color="green", opacity=0.95),
+        marker=go.scattermapbox.Marker(
+            size=MAG_SIZE,
+            color="yellow",   # ⬅️ CHANGEMENT ICI
+            opacity=0.95
+        ),
         text=df_mag_green["hover"],
         hoverinfo="text",
     ))
