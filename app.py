@@ -9,9 +9,6 @@ st.set_page_config(page_title="Carte e-commerce", layout="wide")
 st.title("📍 Boutiques & commandes e-commerce")
 
 # =========================
-<<<<<<< HEAD
-# SESSION STATE (appliquer filtres)
-=======
 # HELPERS (sans sklearn)
 # =========================
 EARTH_R_KM = 6371.0088
@@ -46,14 +43,10 @@ def norm_cp(s: pd.Series) -> pd.Series:
 
 # =========================
 # SESSION STATE
->>>>>>> 9dff46d (ajout des cercle sur les magsain selectionne et du filtre departement et d'un tableaux en dessous de la carte avec le potentiel que peux gagne le ou les magasin en question)
 # =========================
 if "applied_annee" not in st.session_state:
     st.session_state.applied_annee = None
 if "applied_code_magasin" not in st.session_state:
-<<<<<<< HEAD
-    st.session_state.applied_code_magasin = "magBouq"
-=======
     st.session_state.applied_code_magasin = "MAGBOUQ"
 if "applied_radius_km" not in st.session_state:
     st.session_state.applied_radius_km = 10
@@ -61,7 +54,6 @@ if "applied_circle_codes" not in st.session_state:
     st.session_state.applied_circle_codes = []
 if "applied_departements" not in st.session_state:
     st.session_state.applied_departements = []  # ex: ["75","92"]
->>>>>>> 9dff46d (ajout des cercle sur les magsain selectionne et du filtre departement et d'un tableaux en dessous de la carte avec le potentiel que peux gagne le ou les magasin en question)
 
 # =========================
 # DB CONNECT
@@ -104,32 +96,6 @@ df_cmd_all = pd.read_sql("""
 """, conn)
 
 # =========================
-<<<<<<< HEAD
-# FILTRES UI + BOUTON APPLIQUER
-# =========================
-st.subheader("🎛️ Filtres")
-
-annees = sorted(df_cmd_all["annee"].dropna().unique().tolist())
-if not annees:
-    st.error("Aucune année détectée (LEFT(code_commande, 4)).")
-    conn.close()
-    st.stop()
-
-# Année par défaut = 2025 si dispo, sinon dernière année
-annee_defaut = "2025" if "2025" in annees else annees[-1]
-
-# Si première fois, on initialise avec défaut
-if st.session_state.applied_annee is None:
-    st.session_state.applied_annee = annee_defaut
-
-
-# Filtre "en attente" (pas appliqué tant que bouton pas cliqué)
-pending_annee = st.selectbox(
-    "📅 Année",
-    annees,
-    index=annees.index(st.session_state.applied_annee) if st.session_state.applied_annee in annees else 0,
-    key="pending_annee"
-=======
 # PREP TYPES + NORMALISATION
 # =========================
 df_magasin["code_magasin"] = norm_code(df_magasin["code_magasin"])
@@ -137,61 +103,12 @@ df_magasin["nom_magasin"] = df_magasin["nom_magasin"].astype(str)
 df_magasin["cp"] = norm_cp(df_magasin["cp"])
 df_magasin["departement"] = df_magasin["cp"].apply(
     lambda x: str(x)[:2] if isinstance(x, str) and len(x) >= 2 else None
->>>>>>> 9dff46d (ajout des cercle sur les magsain selectionne et du filtre departement et d'un tableaux en dessous de la carte avec le potentiel que peux gagne le ou les magasin en question)
 )
 df_magasin["latitude"] = pd.to_numeric(df_magasin["latitude"], errors="coerce")
 df_magasin["longitude"] = pd.to_numeric(df_magasin["longitude"], errors="coerce")
 df_magasin = df_magasin.dropna(subset=["latitude", "longitude"]).copy()
 
-<<<<<<< HEAD
-# Codes magasin dispo selon l'année "pending"
-df_cmd_pending = df_cmd_all[df_cmd_all["annee"] == pending_annee]
-codes_magasin = sorted(df_cmd_pending["code_magasin"].dropna().unique().tolist())
-
-if not codes_magasin:
-    st.warning(f"Aucun code magasin disponible pour l'année {pending_annee}.")
-    conn.close()
-    st.stop()
-
-default_index = codes_magasin.index(st.session_state.applied_code_magasin) if st.session_state.applied_code_magasin in codes_magasin else (
-    codes_magasin.index("magBouq") if "magBouq" in codes_magasin else 0
-)
-
-pending_code_magasin = st.selectbox(
-    "🏬 Code magasin",
-    codes_magasin,
-    index=default_index,
-    key="pending_code_magasin"
-)
-
-# Bouton Appliquer
-apply_clicked = st.button("✅ Appliquer les filtres")
-
-if apply_clicked:
-    st.session_state.applied_annee = pending_annee
-    st.session_state.applied_code_magasin = pending_code_magasin
-
-# Filtres effectivement appliqués
-selected_annee = st.session_state.applied_annee
-selected_code_magasin = st.session_state.applied_code_magasin
-
-# =========================
-# FILTRE FINAL COMMANDES (APPLIQUÉ)
-# =========================
-df_cmd = df_cmd_all[
-    (df_cmd_all["annee"] == selected_annee) &
-    (df_cmd_all["code_magasin"] == selected_code_magasin)
-].copy()
-
-# =========================
-# PREP
-# =========================
-df_magasin["code_magasin"] = df_magasin["code_magasin"].astype(str)
-df_magasin_ecom["code_magasin"] = df_magasin_ecom["code_magasin"].astype(str)
-
-=======
 df_magasin_ecom["code_magasin"] = norm_code(df_magasin_ecom["code_magasin"])
->>>>>>> 9dff46d (ajout des cercle sur les magsain selectionne et du filtre departement et d'un tableaux en dessous de la carte avec le potentiel que peux gagne le ou les magasin en question)
 ecom_set = set(df_magasin_ecom["code_magasin"].dropna().tolist())
 
 df_cmd_all["annee"] = df_cmd_all["annee"].astype(str)
@@ -413,63 +330,27 @@ center_lon = float(all_lon.mean()) if len(all_lon) else 2.2
 # =========================
 fig = go.Figure()
 
-<<<<<<< HEAD
-# COMMANDES (dessous)
-if not df_cmd.empty:
-    fig.add_trace(go.Scattermapbox(
-        name=f"Commandes {selected_annee} ({selected_code_magasin})",
-        lat=df_cmd["latitude"],
-        lon=df_cmd["longitude"],
-=======
 if not df_cmd_red.empty:
     fig.add_trace(go.Scattermapbox(
         name=f"Commandes {selected_annee} ({selected_code_magasin})",
         lat=df_cmd_red["latitude"],
         lon=df_cmd_red["longitude"],
->>>>>>> 9dff46d (ajout des cercle sur les magsain selectionne et du filtre departement et d'un tableaux en dessous de la carte avec le potentiel que peux gagne le ou les magasin en question)
         mode="markers",
         marker=go.scattermapbox.Marker(size=8, color="red", opacity=0.75),
         text=df_cmd_red["hover"],
         hovertemplate="%{text}<extra></extra>",
     ))
-else:
-    st.info(f"Aucune commande pour {selected_code_magasin} en {selected_annee}")
 
-<<<<<<< HEAD
-# MAGASINS (dessus)
-MAG_SIZE = 12
-df_mag_blue = df_magasin[df_magasin["categorie"] == "Magasin"]
 df_mag_yellow = df_magasin[df_magasin["categorie"] == "Magasin e-commerce"]
-
-if not df_mag_blue.empty:
-    fig.add_trace(go.Scattermapbox(
-        name="Magasins",
-        lat=df_mag_blue["latitude"],
-        lon=df_mag_blue["longitude"],
-        mode="markers",
-        marker=go.scattermapbox.Marker(size=MAG_SIZE, color="blue", opacity=0.95),
-        text=df_mag_blue["hover"],
-        hoverinfo="text",
-    ))
-
-=======
-df_mag_yellow = df_magasin[df_magasin["categorie"] == "Magasin e-commerce"]
->>>>>>> 9dff46d (ajout des cercle sur les magsain selectionne et du filtre departement et d'un tableaux en dessous de la carte avec le potentiel que peux gagne le ou les magasin en question)
 if not df_mag_yellow.empty:
     fig.add_trace(go.Scattermapbox(
         name="Magasins e-commerce",
         lat=df_mag_yellow["latitude"],
         lon=df_mag_yellow["longitude"],
         mode="markers",
-<<<<<<< HEAD
-        marker=go.scattermapbox.Marker(size=MAG_SIZE, color="yellow", opacity=0.95),
-        text=df_mag_yellow["hover"],
-        hoverinfo="text",
-=======
         marker=go.scattermapbox.Marker(size=12, color="yellow", opacity=0.95),
         text=df_mag_yellow["hover"],
         hovertemplate="%{text}<extra></extra>",
->>>>>>> 9dff46d (ajout des cercle sur les magsain selectionne et du filtre departement et d'un tableaux en dessous de la carte avec le potentiel que peux gagne le ou les magasin en question)
     ))
 
 df_non_ecom = df_magasin[df_magasin["categorie"] == "Magasin"]
@@ -531,8 +412,6 @@ st.plotly_chart(fig, use_container_width=True)
 # =========================
 # TABLEAU EN BAS (magasins sélectionnés)
 # =========================
-<<<<<<< HEAD
-=======
 st.subheader("📊 Potentiel des magasins sélectionnés")
 
 if df_selected.empty:
@@ -590,5 +469,4 @@ else:
 
     st.dataframe(df_table, use_container_width=True, hide_index=True)
 
->>>>>>> 9dff46d (ajout des cercle sur les magsain selectionne et du filtre departement et d'un tableaux en dessous de la carte avec le potentiel que peux gagne le ou les magasin en question)
 conn.close()
