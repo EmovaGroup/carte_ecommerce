@@ -5,7 +5,23 @@ import psycopg2
 import numpy as np
 import math
 
+from auth import require_auth, logout
+
 st.set_page_config(page_title="Carte e-commerce", layout="wide")
+
+# =========================
+# AUTH
+# =========================
+require_auth()
+
+with st.sidebar:
+    st.write("✅ Connecté")
+    user_email = (st.session_state.get("sb_user") or {}).get("email", "")
+    if user_email:
+        st.caption(user_email)
+    if st.button("Se déconnecter"):
+        logout()
+
 st.title("📍 Boutiques & commandes e-commerce")
 
 # =========================
@@ -36,7 +52,6 @@ def norm_code(s: pd.Series) -> pd.Series:
     return s.astype(str).str.strip().str.upper()
 
 def norm_cp(s: pd.Series) -> pd.Series:
-    # garde une chaîne, padding éventuel, retire espaces
     out = s.astype(str).str.strip()
     out = out.replace({"nan": None, "None": None, "": None})
     return out
@@ -53,7 +68,7 @@ if "applied_radius_km" not in st.session_state:
 if "applied_circle_codes" not in st.session_state:
     st.session_state.applied_circle_codes = []
 if "applied_departements" not in st.session_state:
-    st.session_state.applied_departements = []  # ex: ["75","92"]
+    st.session_state.applied_departements = []
 
 # =========================
 # DB CONNECT
@@ -70,7 +85,6 @@ conn = psycopg2.connect(
 # =========================
 # LOAD DATA
 # =========================
-# ⚠️ IMPORTANT : on récupère cp pour filtrer par département
 df_magasin = pd.read_sql("""
     SELECT code_magasin, nom_magasin, latitude, longitude, cp
     FROM public.ref_magasin
@@ -149,7 +163,6 @@ pending_annee = st.selectbox(
     key="pending_annee",
 )
 
-# Magasin pour afficher ses commandes en rouge (tous magasins présents dans commandes année)
 df_cmd_pending = df_cmd_all[df_cmd_all["annee"] == pending_annee]
 codes_magasin = sorted(df_cmd_pending["code_magasin"].dropna().unique().tolist())
 if not codes_magasin:
@@ -157,7 +170,6 @@ if not codes_magasin:
     conn.close()
     st.stop()
 
-# ✅ Selectbox "commandes rouges" = CODE - NOM (ecom + non-ecom)
 df_mag_label = df_magasin[["code_magasin", "nom_magasin"]].drop_duplicates().copy()
 df_mag_label = df_mag_label[df_mag_label["code_magasin"].isin(codes_magasin)].copy()
 df_mag_label["label"] = df_mag_label.apply(lambda r: f"{r['code_magasin']} - {r['nom_magasin']}", axis=1)
@@ -188,7 +200,6 @@ pending_radius_km = st.slider(
     key="pending_radius_km",
 )
 
-# ✅ Filtre département (2 premiers caractères du CP)
 deps = sorted([d for d in df_magasin["departement"].dropna().unique().tolist() if len(str(d)) == 2])
 pending_departements = st.multiselect(
     "🗺️ Départements (2 premiers chiffres du CP) — filtre la liste des magasins",
@@ -197,10 +208,7 @@ pending_departements = st.multiselect(
     key="pending_departements",
 )
 
-# ✅ Cercles = TOUS les magasins (max 40) avec label "CODE - NOM (ECOM/NON-ECOM)"
 df_all_options = df_magasin[["code_magasin", "nom_magasin", "categorie", "departement"]].drop_duplicates().copy()
-
-# applique filtre département sur la LISTE (si sélection)
 if pending_departements:
     df_all_options = df_all_options[df_all_options["departement"].isin(pending_departements)].copy()
 
@@ -355,7 +363,6 @@ if not df_mag_yellow.empty:
 
 df_non_ecom = df_magasin[df_magasin["categorie"] == "Magasin"]
 if not df_non_ecom.empty:
-    # hover potentiel correspondant aux non-ecom
     df_non_ecom_hover = df_all_mag[df_all_mag["categorie"] == "Magasin"][["code_magasin", "hover_potential"]].copy()
     df_non_ecom_plot = df_non_ecom.merge(df_non_ecom_hover, on="code_magasin", how="left")
     fig.add_trace(go.Scattermapbox(
@@ -368,7 +375,6 @@ if not df_non_ecom.empty:
         hovertemplate="%{text}<extra></extra>",
     ))
 
-# Cercles BLEUS
 if not df_selected.empty and selected_radius_km > 0:
     for r in df_selected.itertuples(index=False):
         clats, clons = circle_latlon(float(r.latitude), float(r.longitude), selected_radius_km, n_points=48)
@@ -410,7 +416,7 @@ fig.update_layout(
 st.plotly_chart(fig, use_container_width=True)
 
 # =========================
-# TABLEAU EN BAS (magasins sélectionnés)
+# TABLEAU EN BAS
 # =========================
 st.subheader("📊 Potentiel des magasins sélectionnés")
 
