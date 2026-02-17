@@ -91,8 +91,11 @@ df_magasin = pd.read_sql("""
     WHERE latitude IS NOT NULL AND longitude IS NOT NULL
 """, conn)
 
+# ✅ On récupère aussi le rayon e-commerce (en mètres)
 df_magasin_ecom = pd.read_sql("""
-    SELECT code_magasin
+    SELECT
+      code_magasin,
+      COALESCE(rayon_en_metres, 0) AS rayon_en_metres
     FROM public.ref_magasin_ecommerce
 """, conn)
 
@@ -123,7 +126,19 @@ df_magasin["longitude"] = pd.to_numeric(df_magasin["longitude"], errors="coerce"
 df_magasin = df_magasin.dropna(subset=["latitude", "longitude"]).copy()
 
 df_magasin_ecom["code_magasin"] = norm_code(df_magasin_ecom["code_magasin"])
+df_magasin_ecom["rayon_en_metres"] = pd.to_numeric(df_magasin_ecom["rayon_en_metres"], errors="coerce").fillna(0.0)
+df_magasin_ecom["rayon_km"] = (df_magasin_ecom["rayon_en_metres"] / 1000.0).round(3)
+
+# ✅ set des magasins e-commerce
 ecom_set = set(df_magasin_ecom["code_magasin"].dropna().tolist())
+
+# ✅ on injecte le rayon e-commerce dans df_magasin
+df_magasin = df_magasin.merge(
+    df_magasin_ecom[["code_magasin", "rayon_km"]],
+    on="code_magasin",
+    how="left"
+)
+df_magasin["rayon_km"] = df_magasin["rayon_km"].fillna(0.0)
 
 df_cmd_all["annee"] = df_cmd_all["annee"].astype(str)
 df_cmd_all["code_magasin"] = norm_code(df_cmd_all["code_magasin"])
@@ -192,7 +207,7 @@ pending_label_magasin = st.selectbox(
 pending_code_magasin = label_to_code_red[pending_label_magasin]
 
 pending_radius_km = st.slider(
-    "🔵 Rayon (km) appliqué aux magasins sélectionnés",
+    "🔵 Rayon (km) appliqué aux magasins sélectionnés (cercles bleus)",
     min_value=1,
     max_value=50,
     value=int(st.session_state.applied_radius_km),
@@ -208,12 +223,15 @@ pending_departements = st.multiselect(
     key="pending_departements",
 )
 
+# ✅ IMPORTANT : on EXCLUT les ECOM de la liste des cercles manuels
 df_all_options = df_magasin[["code_magasin", "nom_magasin", "categorie", "departement"]].drop_duplicates().copy()
+df_all_options = df_all_options[df_all_options["categorie"] != "Magasin e-commerce"].copy()
+
 if pending_departements:
     df_all_options = df_all_options[df_all_options["departement"].isin(pending_departements)].copy()
 
 df_all_options["label"] = df_all_options.apply(
-    lambda r: f"{r['code_magasin']} - {r['nom_magasin']} ({'ECOM' if r['categorie']=='Magasin e-commerce' else 'NON-ECOM'})",
+    lambda r: f"{r['code_magasin']} - {r['nom_magasin']} (NON-ECOM)",
     axis=1
 )
 
@@ -227,7 +245,7 @@ if current_codes:
     default_labels = [code_to_label_circle[c] for c in current_codes if c in code_to_label_circle]
 
 pending_circle_labels = st.multiselect(
-    "⭕ Magasins pour afficher le cercle (max 40)",
+    "⭕ Magasins NON-ECOM pour afficher le cercle (max 40)",
     options=labels_sorted,
     default=default_labels,
     max_selections=40,
@@ -375,6 +393,39 @@ if not df_non_ecom.empty:
         hovertemplate="%{text}<extra></extra>",
     ))
 
+# =========================
+# ✅ CERCLES E-COM (VERT) — TOUJOURS AFFICHÉS
+# =========================
+df_ecom_centers = df_all_mag[
+    (df_all_mag["categorie"] == "Magasin e-commerce") &
+    (df_all_mag["rayon_km"] > 0)
+].copy()
+
+for r in df_ecom_centers.itertuples(index=False):
+    radius_km = float(r.rayon_km)
+    clats, clons = circle_latlon(float(r.latitude), float(r.longitude), radius_km, n_points=48)
+
+    hover_circle = (
+        f"<b>Zone e-commerce</b><br>"
+        f"{(r.nom_magasin or '').strip()} ({r.code_magasin})<br>"
+        f"Rayon: {int(radius_km * 1000)} m ({radius_km:.2f} km)<br>"
+    ).replace(",", " ")
+
+    fig.add_trace(go.Scattermapbox(
+        showlegend=False,
+        lat=clats,
+        lon=clons,
+        mode="lines",
+        fill="toself",
+        fillcolor="rgba(0, 255, 128, 0.14)",
+        line=dict(width=1.5, color="rgba(0, 200, 100, 0.95)"),
+        text=[hover_circle] * len(clats),
+        hovertemplate="%{text}<extra></extra>",
+    ))
+
+# =========================
+# CERCLES BLEUS — magasins NON-ECOM sélectionnés
+# =========================
 if not df_selected.empty and selected_radius_km > 0:
     for r in df_selected.itertuples(index=False):
         clats, clons = circle_latlon(float(r.latitude), float(r.longitude), selected_radius_km, n_points=48)
@@ -416,7 +467,7 @@ fig.update_layout(
 st.plotly_chart(fig, use_container_width=True)
 
 # =========================
-# TABLEAU EN BAS
+# TABLEAU EN BAS (seulement cercles bleus sélectionnés)
 # =========================
 st.subheader("📊 Potentiel des magasins sélectionnés")
 
@@ -465,7 +516,7 @@ else:
     total_pm = (total_pot / total_nb) if total_nb > 0 else 0.0
 
     st.caption(
-        f"Rayon: {int(selected_radius_km)} km — Année: {selected_annee} — "
+        f"Rayon bleu: {int(selected_radius_km)} km — Année: {selected_annee} — "
         f"Magasins: {len(df_table_num)} — "
         f"CA potentiel total: {total_pot:,.2f} € — "
         f"Nb commandes: {total_nb} — "
