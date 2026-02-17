@@ -69,6 +69,9 @@ if "applied_circle_codes" not in st.session_state:
     st.session_state.applied_circle_codes = []
 if "applied_departements" not in st.session_state:
     st.session_state.applied_departements = []
+# ✅ NEW: afficher / cacher les rayons e-commerce
+if "applied_show_ecom_radii" not in st.session_state:
+    st.session_state.applied_show_ecom_radii = True
 
 # =========================
 # DB CONNECT
@@ -206,6 +209,13 @@ pending_label_magasin = st.selectbox(
 )
 pending_code_magasin = label_to_code_red[pending_label_magasin]
 
+# ✅✅✅ DERNIÈRE MODIF DEMANDÉE : toggle placé juste sous le select magasin rouge
+pending_show_ecom_radii = st.checkbox(
+    "🟢 Afficher les rayons des magasins e-commerce",
+    value=bool(st.session_state.applied_show_ecom_radii),
+    key="pending_show_ecom_radii",
+)
+
 pending_radius_km = st.slider(
     "🔵 Rayon (km) appliqué aux magasins sélectionnés (cercles bleus)",
     min_value=1,
@@ -255,12 +265,14 @@ pending_circle_labels = st.multiselect(
 apply_clicked = st.button("✅ Appliquer les filtres")
 if apply_clicked:
     st.session_state.applied_annee = pending_annee
+    st.session_state.applied_show_ecom_radii = bool(pending_show_ecom_radii)
     st.session_state.applied_code_magasin = pending_code_magasin
     st.session_state.applied_radius_km = pending_radius_km
     st.session_state.applied_departements = pending_departements
     st.session_state.applied_circle_codes = [label_to_code_circle[l] for l in pending_circle_labels]
 
 selected_annee = st.session_state.applied_annee
+selected_show_ecom_radii = bool(st.session_state.applied_show_ecom_radii)
 selected_code_magasin = st.session_state.applied_code_magasin
 selected_radius_km = float(st.session_state.applied_radius_km)
 selected_circle_codes = st.session_state.applied_circle_codes
@@ -333,7 +345,7 @@ df_all_mag["hover_potential"] = df_all_mag.apply(
         f"Code: {r['code_magasin']}<br>"
         f"Type: {'ECOM' if r['categorie']=='Magasin e-commerce' else 'NON-ECOM'}<br>"
         f"Département: {r['departement'] if pd.notna(r['departement']) else '-'}<br>"
-        f"Rayon: {int(selected_radius_km)} km (année {selected_annee})<br>"
+        f"Rayon bleu: {int(selected_radius_km)} km (année {selected_annee})<br>"
         f"<br><b>Potentiel (commandes dans le cercle)</b><br>"
         f"Nb commandes: {int(r['potential_nb_cmd'])}<br>"
         f"Montant total: {float(r['potential_total_cmd']):,.2f} €"
@@ -394,34 +406,35 @@ if not df_non_ecom.empty:
     ))
 
 # =========================
-# ✅ CERCLES E-COM (VERT) — TOUJOURS AFFICHÉS
+# ✅ CERCLES E-COM (VERT) — AFFICHAGE ON/OFF
 # =========================
-df_ecom_centers = df_all_mag[
-    (df_all_mag["categorie"] == "Magasin e-commerce") &
-    (df_all_mag["rayon_km"] > 0)
-].copy()
+if selected_show_ecom_radii:
+    df_ecom_centers = df_all_mag[
+        (df_all_mag["categorie"] == "Magasin e-commerce") &
+        (df_all_mag["rayon_km"] > 0)
+    ].copy()
 
-for r in df_ecom_centers.itertuples(index=False):
-    radius_km = float(r.rayon_km)
-    clats, clons = circle_latlon(float(r.latitude), float(r.longitude), radius_km, n_points=48)
+    for r in df_ecom_centers.itertuples(index=False):
+        radius_km = float(r.rayon_km)
+        clats, clons = circle_latlon(float(r.latitude), float(r.longitude), radius_km, n_points=48)
 
-    hover_circle = (
-        f"<b>Zone e-commerce</b><br>"
-        f"{(r.nom_magasin or '').strip()} ({r.code_magasin})<br>"
-        f"Rayon: {int(radius_km * 1000)} m ({radius_km:.2f} km)<br>"
-    ).replace(",", " ")
+        hover_circle = (
+            f"<b>Zone e-commerce</b><br>"
+            f"{(r.nom_magasin or '').strip()} ({r.code_magasin})<br>"
+            f"Rayon: {int(radius_km * 1000)} m ({radius_km:.2f} km)<br>"
+        ).replace(",", " ")
 
-    fig.add_trace(go.Scattermapbox(
-        showlegend=False,
-        lat=clats,
-        lon=clons,
-        mode="lines",
-        fill="toself",
-        fillcolor="rgba(0, 255, 128, 0.14)",
-        line=dict(width=1.5, color="rgba(0, 200, 100, 0.95)"),
-        text=[hover_circle] * len(clats),
-        hovertemplate="%{text}<extra></extra>",
-    ))
+        fig.add_trace(go.Scattermapbox(
+            showlegend=False,
+            lat=clats,
+            lon=clons,
+            mode="lines",
+            fill="toself",
+            fillcolor="rgba(0, 255, 128, 0.14)",
+            line=dict(width=1.5, color="rgba(0, 200, 100, 0.95)"),
+            text=[hover_circle] * len(clats),
+            hovertemplate="%{text}<extra></extra>",
+        ))
 
 # =========================
 # CERCLES BLEUS — magasins NON-ECOM sélectionnés
@@ -435,7 +448,7 @@ if not df_selected.empty and selected_radius_km > 0:
             f"{(r.nom_magasin or '').strip()} ({r.code_magasin})<br>"
             f"Type: {'ECOM' if r.categorie=='Magasin e-commerce' else 'NON-ECOM'}<br>"
             f"Département: {r.departement if pd.notna(r.departement) else '-'}<br>"
-            f"Rayon: {int(selected_radius_km)} km (année {selected_annee})<br>"
+            f"Rayon bleu: {int(selected_radius_km)} km (année {selected_annee})<br>"
             f"<br><b>Potentiel</b><br>"
             f"Nb commandes: {int(r.potential_nb_cmd)}<br>"
             f"Montant total: {float(r.potential_total_cmd):,.2f} €"
